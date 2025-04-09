@@ -13,24 +13,19 @@ public class Task {
     private Long id;
 
     private String title;
-    private boolean completed;
+    private Integer targetTime;
+    private Integer loggedTime = 0;
 
-    // Constructors
     public Task() {
     }
 
-    public Task(String title, boolean completed) {
+    public Task(String title, Integer targetTime) {
         this.title = title;
-        this.completed = completed;
+        this.targetTime = targetTime;
     }
 
-    // Getters and Setters
     public Long getId() {
         return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
     }
 
     public String getTitle() {
@@ -41,11 +36,29 @@ public class Task {
         this.title = title;
     }
 
-    public boolean isCompleted() {
-        return completed;
+    public Integer getTargetTime() {
+        return targetTime;
     }
 
-    public void setCompleted(boolean completed) {
-        this.completed = completed;
+    public void setTargetTime(Integer targetTime) {
+        this.targetTime = targetTime;
+    }
+
+    public Integer getLoggedTime() {
+        return loggedTime;
+    }
+
+    public void setLoggedTime(Integer loggedTime) {
+        this.loggedTime = loggedTime;
+    }
+
+    // Increment the logged time by a given amount (in minutes)
+    public void addLoggedTime(Integer minutes) {
+        this.loggedTime += minutes;
+    }
+
+    @Override
+    public String toString() {
+        return "Task [id=" + id + ", title=" + title + ", targetTime=" + targetTime + ", loggedTime=" + loggedTime + "]";
     }
 }
