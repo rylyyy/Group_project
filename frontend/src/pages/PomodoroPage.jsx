@@ -2,25 +2,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const PomodoroPage = () => {
-  // Default durations in seconds
+  // Constants
   const DEFAULT_POMODORO = 25 * 60;
   const DEFAULT_SHORT_BREAK = 5 * 60;
   const DEFAULT_LONG_BREAK = 15 * 60;
 
-  const [sessionType, setSessionType] = useState('pomodoro'); 
+  // State
+  const [sessionType, setSessionType] = useState('pomodoro');
   const [currentTime, setCurrentTime] = useState(DEFAULT_POMODORO);
   const [isRunning, setIsRunning] = useState(false);
   const [isStudySession, setIsStudySession] = useState(true);
   const [customMinutes, setCustomMinutes] = useState('');
   const [taskName, setTaskName] = useState('');
-  
-  // For tasks fetched from backend
   const [tasks, setTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
+  const [plannedDuration, setPlannedDuration] = useState(DEFAULT_POMODORO);
+  const [accumulatedLoggedSeconds, setAccumulatedLoggedSeconds] = useState(0);
+  const [sessionStart, setSessionStart] = useState(null);
 
+  // Refs
   const timerRef = useRef(null);
 
-  // Fetch tasks when component mounts
+  // Fetch Tasks
   useEffect(() => {
     fetch('/api/tasks')
       .then(response => response.json())
@@ -28,72 +31,101 @@ const PomodoroPage = () => {
       .catch(error => console.error('Error fetching tasks:', error));
   }, []);
 
-  // Adjust timer when session type changes
+  // Session Setup
   useEffect(() => {
     stopTimer();
     if (sessionType === 'pomodoro') {
+      setPlannedDuration(DEFAULT_POMODORO);
       setCurrentTime(DEFAULT_POMODORO);
       setIsStudySession(true);
     } else if (sessionType === 'short-break') {
+      setPlannedDuration(DEFAULT_SHORT_BREAK);
       setCurrentTime(DEFAULT_SHORT_BREAK);
       setIsStudySession(false);
     } else if (sessionType === 'long-break') {
+      setPlannedDuration(DEFAULT_LONG_BREAK);
       setCurrentTime(DEFAULT_LONG_BREAK);
       setIsStudySession(false);
     } else if (sessionType === 'custom') {
+      setPlannedDuration(0);
       setCurrentTime(0);
       setIsStudySession(true);
     }
+    setAccumulatedLoggedSeconds(0);
+    setSessionStart(null);
   }, [sessionType]);
 
-  // Timer countdown effect
+  // Timer Countdown
   useEffect(() => {
     if (isRunning) {
+      if (!sessionStart) {
+        setSessionStart(Date.now());
+      }
       timerRef.current = setInterval(() => {
         setCurrentTime(prevTime => {
           if (prevTime > 1) {
             return prevTime - 1;
           } else {
             clearInterval(timerRef.current);
-            handleSessionEnd();
+            handleNaturalFinish();
             return 0;
           }
         });
       }, 1000);
     }
     return () => clearInterval(timerRef.current);
-  }, [isRunning]);
+  }, [isRunning, sessionStart]);
 
-  const handleSessionEnd = () => {
-    // When the session ends, log the time if a task was selected
-    const minutesUsed = Math.floor(DEFAULT_POMODORO / 60) - Math.floor(currentTime / 60);
-    if (selectedTask) {
-      logTaskTime(selectedTask.id, minutesUsed);
+  // Natural Finish
+  const handleNaturalFinish = () => {
+    const now = Date.now();
+    const secondsElapsed = Math.floor((now - sessionStart) / 1000);
+    const plannedMinutes = Math.floor(plannedDuration / 60);
+    const alreadyLoggedMinutes = Math.floor(accumulatedLoggedSeconds / 60);
+    const remainingMinutes = plannedMinutes - alreadyLoggedMinutes;
+    if (selectedTask && remainingMinutes > 0) {
+      logTaskTime(selectedTask.id, remainingMinutes);
     }
-    alert(isStudySession ? 'Session complete! Great job!' : 'Break is over! Back to study.');
+    alert(isStudySession ? 'Session complete! Great job!' : 'Break is over!');
     stopTimer();
+    setSessionStart(null);
   };
 
+  // Manual Stop
+  const handleManualStop = () => {
+    if (sessionStart) {
+      const now = Date.now();
+      const secondsElapsed = Math.floor((now - sessionStart) / 1000);
+      const minutesElapsed = Math.floor(secondsElapsed / 60);
+      if (selectedTask && minutesElapsed > 0) {
+        logTaskTime(selectedTask.id, minutesElapsed);
+        setAccumulatedLoggedSeconds(prev => prev + minutesElapsed * 60);
+      }
+    }
+    stopTimer();
+    setSessionStart(null);
+  };
+
+  // Log Task
   const logTaskTime = (taskId, minutes) => {
     fetch(`/api/tasks/log/${taskId}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minutes })
     })
       .then(response => response.json())
       .then(updatedTask => {
-        // Update the tasks list with the new logged time for the task
-        setTasks(tasks.map(task => task.id === taskId ? updatedTask : task));
+        setTasks(prevTasks =>
+          prevTasks.map(task => (task.id === taskId ? updatedTask : task))
+        );
       })
       .catch(error => console.error('Error logging time:', error));
   };
 
+  // Timer Controls
   const startTimer = () => {
     if (!isRunning && currentTime > 0) {
       setIsRunning(true);
-      // Optionally record session start with an API call.
     }
   };
 
@@ -116,15 +148,21 @@ const PomodoroPage = () => {
     } else if (sessionType === 'custom') {
       setCurrentTime(0);
     }
+    setAccumulatedLoggedSeconds(0);
+    setSessionStart(null);
   };
 
+  // Custom Time Setup
   const handleSetCustomMinutes = () => {
     const minutes = parseInt(customMinutes, 10);
     if (!isNaN(minutes) && minutes > 0) {
-      setCurrentTime(minutes * 60);
+      const customSeconds = minutes * 60;
+      setPlannedDuration(customSeconds);
+      setCurrentTime(customSeconds);
     }
   };
 
+  // Format Time
   const formatTime = (seconds) => {
     const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
     const secs = String(seconds % 60).padStart(2, '0');
@@ -132,28 +170,24 @@ const PomodoroPage = () => {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      padding: '20px'
-    }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' }}>
+      {/* Title */}
       <h1>Pomodoro Timer</h1>
+      {/* Timer Display */}
       <div style={{ fontSize: '4rem', fontWeight: 'bold', margin: '20px 0' }}>
         {formatTime(currentTime)}
       </div>
+      {/* Session Status */}
       <div style={{ marginBottom: '20px', fontWeight: 'bold' }}>
         {isStudySession ? 'Study Session' : 'Break'}
       </div>
-
-      {/* Session Selection Buttons */}
+      {/* Session Buttons */}
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
         <button onClick={() => setSessionType('pomodoro')}>Pomodoro</button>
         <button onClick={() => setSessionType('short-break')}>Short Break</button>
         <button onClick={() => setSessionType('long-break')}>Long Break</button>
         <button onClick={() => setSessionType('custom')}>Custom</button>
       </div>
-
       {/* Custom Time Input */}
       {sessionType === 'custom' && (
         <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
@@ -167,8 +201,7 @@ const PomodoroPage = () => {
           <button onClick={handleSetCustomMinutes}>Set Custom Time</button>
         </div>
       )}
-
-      {/* Optional Task Input */}
+      {/* Task Input */}
       <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px' }}>
         <input
           type="text"
@@ -178,39 +211,50 @@ const PomodoroPage = () => {
           style={{ padding: '8px', width: '100%' }}
         />
       </div>
-
       {/* Task List */}
-      <ul style={{ padding: 0, listStyle: 'none' }}>
-  {tasks.map(task => (
-    <li
-      key={task.id}
-      style={{
-        marginBottom: '5px',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '5px',
-        backgroundColor: selectedTask && selectedTask.id === task.id ? '#ddd' : 'transparent'
-      }}
-    >
-      <input
-        type="radio"
-        name="taskSelection"
-        checked={selectedTask?.id === task.id}
-        onChange={() => setSelectedTask(task)}
-        style={{ marginRight: '8px' }}
-      />
-      <span>
-        {task.title} - Logged: {task.loggedTime}min / Target: {task.targetTime}min
-      </span>
-    </li>
-  ))}
-</ul>
-
-
-      {/* Control Buttons */}
+      {tasks.length > 0 && (
+        <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px', textAlign: 'left' }}>
+          <h3>Tasks</h3>
+          <ul style={{ padding: 0, listStyle: 'none' }}>
+            {tasks.map(task => (
+              <li key={task.id} style={{ marginBottom: '5px' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    padding: '5px',
+                    backgroundColor: selectedTask && selectedTask.id === task.id ? '#ddd' : 'transparent'
+                  }}
+                  onClick={(e) => {
+                    if (selectedTask && selectedTask.id === task.id) {
+                      setSelectedTask(null);
+                      e.preventDefault();
+                    } else {
+                      setSelectedTask(task);
+                    }
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="taskSelection"
+                    style={{ marginRight: '8px' }}
+                    readOnly
+                    checked={selectedTask ? selectedTask.id === task.id : false}
+                  />
+                  <span>
+                    {task.title} - Logged: {task.loggedTime}min / Target: {task.targetTime}min
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {/* Controls */}
       <div style={{ display: 'flex', gap: '10px' }}>
         <button onClick={startTimer}>Start</button>
-        <button onClick={stopTimer}>Stop</button>
+        <button onClick={handleManualStop}>Stop</button>
         <button onClick={resetTimer}>Reset</button>
       </div>
     </div>
