@@ -18,11 +18,9 @@ public class DemoApplication {
     @Bean
     public ApplicationRunner init(TaskRepository repository) {
         return args -> {
-            repository.save(new Task("Write report", 60));       // 60 minutes target
-            repository.save(new Task("Study mathematics", 45));   // 45 minutes target
-            repository.save(new Task("Read chapter 5", 30));        // 30 minutes target
-
-            // Print all tasks to the console
+            repository.save(new Task("Write report", "High", "Not Started", 60));
+            repository.save(new Task("Study mathematics", "Medium", "Not Started", 45));
+            repository.save(new Task("Read chapter 5", "Low", "Not Started", 30));
             repository.findAll().forEach(System.out::println);
         };
     }
