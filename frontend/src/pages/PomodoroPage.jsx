@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
+
 const PomodoroPage = () => {
   const DEFAULT_POMODORO = 25 * 60;
   const DEFAULT_SHORT_BREAK = 5 * 60;
   const DEFAULT_LONG_BREAK = 15 * 60;
+
 
   const [sessionType, setSessionType] = useState('pomodoro');
   const [currentTime, setCurrentTime] = useState(DEFAULT_POMODORO);
@@ -16,22 +18,24 @@ const PomodoroPage = () => {
   const [plannedDuration, setPlannedDuration] = useState(DEFAULT_POMODORO);
   const [accumulatedLoggedSeconds, setAccumulatedLoggedSeconds] = useState(0);
   const [sessionStart, setSessionStart] = useState(null);
-  const [hasLogged, setHasLogged] = useState(false);
-
+  const hasLoggedRef = useRef(false);
+ 
   const timerRef = useRef(null);
 
+
+  // Fetch tasks once when the component loads.
   useEffect(() => {
     axios
       .get('http://localhost:8080/api/tasks')
-      .then(response => {
-        setTasks(response.data);
-      })
+      .then(response => setTasks(response.data))
       .catch(error => console.error("Error fetching tasks:", error));
   }, []);
 
+
+  // Reset timer settings when sessionType changes.
   useEffect(() => {
     stopTimer();
-    setHasLogged(false);
+    hasLoggedRef.current = false;  // Reset logging flag.
     if (sessionType === 'pomodoro') {
       setPlannedDuration(DEFAULT_POMODORO);
       setCurrentTime(DEFAULT_POMODORO);
@@ -54,35 +58,46 @@ const PomodoroPage = () => {
     setSessionStart(null);
   }, [sessionType]);
 
-  // Timer effect now only depends on isRunning to avoid recreating intervals based on sessionStart updates.
+
+  // Timer effect: Count down every second and call finish immediately when time <= 1.
   useEffect(() => {
     if (isRunning) {
       timerRef.current = setInterval(() => {
         setCurrentTime(prevTime => {
-          if (prevTime > 0) {
-            return prevTime - 1;
-          } else {
+          if (prevTime <= 1) {
             clearInterval(timerRef.current);
             handleNaturalFinish();
             return 0;
           }
+          return prevTime - 1;
         });
       }, 1000);
     }
     return () => clearInterval(timerRef.current);
   }, [isRunning]);
 
+
   const logElapsedTime = () => {
     if (!sessionStart) return;
-    let totalMinutesElapsed;
-    if (sessionType === 'custom' && currentTime === 0) {
-      totalMinutesElapsed = Math.floor(plannedDuration / 60);
-    } else {
-      const secondsElapsed = Math.floor((Date.now() - sessionStart) / 1000);
-      totalMinutesElapsed = Math.floor(secondsElapsed / 60);
-      if (currentTime === 0 && secondsElapsed > 0 && totalMinutesElapsed === 0) {
-        totalMinutesElapsed = 1;
+
+
+    // For custom sessions, log exactly the user-entered value.
+    if (sessionType === 'custom') {
+      if (accumulatedLoggedSeconds === 0 && selectedTaskId) {
+        const minutes = parseInt(customMinutes, 10);
+        logTaskTime(selectedTaskId, minutes);
+        setAccumulatedLoggedSeconds(minutes * 60);
       }
+      return;
+    }
+
+
+    // For non-custom sessions, compute elapsed minutes.
+    const secondsElapsed = Math.floor((Date.now() - sessionStart) / 1000);
+    let totalMinutesElapsed = Math.floor(secondsElapsed / 60);
+    // If session finished quickly (but with nonzero seconds) ensure at least one minute is logged.
+    if (currentTime === 0 && secondsElapsed > 0 && totalMinutesElapsed === 0) {
+      totalMinutesElapsed = 1;
     }
     const alreadyLoggedMinutes = Math.floor(accumulatedLoggedSeconds / 60);
     const deltaMinutes = totalMinutesElapsed - alreadyLoggedMinutes;
@@ -92,20 +107,28 @@ const PomodoroPage = () => {
     }
   };
 
+
   const handleNaturalFinish = () => {
-    if (hasLogged) return;
-    setHasLogged(true);
-    logElapsedTime();
+    if (!hasLoggedRef.current) {
+      hasLoggedRef.current = true;
+      logElapsedTime();
+    }
     alert(isStudySession ? 'Session complete! Great job!' : 'Break is over!');
     stopTimer();
     setSessionStart(null);
   };
 
+
+  // Stop the timer manually and log elapsed time if not done already.
   const handleManualStop = () => {
-    logElapsedTime();
     stopTimer();
     setSessionStart(null);
+    if (!hasLoggedRef.current) {
+      hasLoggedRef.current = true;
+      logElapsedTime();
+    }
   };
+
 
   const logTaskTime = (taskId, minutes) => {
     axios
@@ -120,7 +143,7 @@ const PomodoroPage = () => {
       .catch(error => console.error("Error logging time:", error));
   };
 
-  // Start timer and set sessionStart here to avoid the timer effect being restarted unnecessarily.
+
   const startTimer = () => {
     if (!isRunning && currentTime > 0) {
       setSessionStart(Date.now());
@@ -128,14 +151,16 @@ const PomodoroPage = () => {
     }
   };
 
+
   const stopTimer = () => {
     setIsRunning(false);
     clearInterval(timerRef.current);
   };
 
+
   const resetTimer = () => {
     stopTimer();
-    setHasLogged(false);
+    hasLoggedRef.current = false;
     if (sessionType === 'pomodoro') {
       setCurrentTime(DEFAULT_POMODORO);
       setIsStudySession(true);
@@ -152,6 +177,7 @@ const PomodoroPage = () => {
     setSessionStart(null);
   };
 
+
   const handleSetCustomMinutes = () => {
     const minutes = parseInt(customMinutes, 10);
     if (!isNaN(minutes) && minutes > 0) {
@@ -161,11 +187,13 @@ const PomodoroPage = () => {
     }
   };
 
+
   const formatTime = (seconds) => {
     const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
     const secs = String(seconds % 60).padStart(2, '0');
     return `${minutes}:${secs}`;
   };
+
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' }}>
@@ -227,5 +255,6 @@ const PomodoroPage = () => {
     </div>
   );
 };
+
 
 export default PomodoroPage;
