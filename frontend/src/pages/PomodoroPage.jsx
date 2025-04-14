@@ -1,39 +1,37 @@
-// src/pages/PomodoroPage.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 
 const PomodoroPage = () => {
-  // Constants
   const DEFAULT_POMODORO = 25 * 60;
   const DEFAULT_SHORT_BREAK = 5 * 60;
   const DEFAULT_LONG_BREAK = 15 * 60;
 
-  // State
   const [sessionType, setSessionType] = useState('pomodoro');
   const [currentTime, setCurrentTime] = useState(DEFAULT_POMODORO);
   const [isRunning, setIsRunning] = useState(false);
   const [isStudySession, setIsStudySession] = useState(true);
   const [customMinutes, setCustomMinutes] = useState('');
-  const [taskName, setTaskName] = useState('');
   const [tasks, setTasks] = useState([]);
-  const [selectedTask, setSelectedTask] = useState(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [plannedDuration, setPlannedDuration] = useState(DEFAULT_POMODORO);
   const [accumulatedLoggedSeconds, setAccumulatedLoggedSeconds] = useState(0);
   const [sessionStart, setSessionStart] = useState(null);
+  const [hasLogged, setHasLogged] = useState(false);
 
-  // Refs
   const timerRef = useRef(null);
 
-  // Fetch Tasks
   useEffect(() => {
-    fetch('/api/tasks')
-      .then(response => response.json())
-      .then(data => setTasks(data))
-      .catch(error => console.error('Error fetching tasks:', error));
+    axios
+      .get('http://localhost:8080/api/tasks')
+      .then(response => {
+        setTasks(response.data);
+      })
+      .catch(error => console.error("Error fetching tasks:", error));
   }, []);
 
-  // Session Setup
   useEffect(() => {
     stopTimer();
+    setHasLogged(false);
     if (sessionType === 'pomodoro') {
       setPlannedDuration(DEFAULT_POMODORO);
       setCurrentTime(DEFAULT_POMODORO);
@@ -47,23 +45,21 @@ const PomodoroPage = () => {
       setCurrentTime(DEFAULT_LONG_BREAK);
       setIsStudySession(false);
     } else if (sessionType === 'custom') {
-      setPlannedDuration(0);
-      setCurrentTime(0);
+      const customSec = customMinutes ? parseInt(customMinutes, 10) * 60 : 0;
+      setPlannedDuration(customSec);
+      setCurrentTime(customSec);
       setIsStudySession(true);
     }
     setAccumulatedLoggedSeconds(0);
     setSessionStart(null);
   }, [sessionType]);
 
-  // Timer Countdown
+  // Timer effect now only depends on isRunning to avoid recreating intervals based on sessionStart updates.
   useEffect(() => {
     if (isRunning) {
-      if (!sessionStart) {
-        setSessionStart(Date.now());
-      }
       timerRef.current = setInterval(() => {
         setCurrentTime(prevTime => {
-          if (prevTime > 1) {
+          if (prevTime > 0) {
             return prevTime - 1;
           } else {
             clearInterval(timerRef.current);
@@ -74,57 +70,60 @@ const PomodoroPage = () => {
       }, 1000);
     }
     return () => clearInterval(timerRef.current);
-  }, [isRunning, sessionStart]);
+  }, [isRunning]);
 
-  // Natural Finish
-  const handleNaturalFinish = () => {
-    const now = Date.now();
-    const secondsElapsed = Math.floor((now - sessionStart) / 1000);
-    const plannedMinutes = Math.floor(plannedDuration / 60);
-    const alreadyLoggedMinutes = Math.floor(accumulatedLoggedSeconds / 60);
-    const remainingMinutes = plannedMinutes - alreadyLoggedMinutes;
-    if (selectedTask && remainingMinutes > 0) {
-      logTaskTime(selectedTask.id, remainingMinutes);
+  const logElapsedTime = () => {
+    if (!sessionStart) return;
+    let totalMinutesElapsed;
+    if (sessionType === 'custom' && currentTime === 0) {
+      totalMinutesElapsed = Math.floor(plannedDuration / 60);
+    } else {
+      const secondsElapsed = Math.floor((Date.now() - sessionStart) / 1000);
+      totalMinutesElapsed = Math.floor(secondsElapsed / 60);
+      if (currentTime === 0 && secondsElapsed > 0 && totalMinutesElapsed === 0) {
+        totalMinutesElapsed = 1;
+      }
     }
+    const alreadyLoggedMinutes = Math.floor(accumulatedLoggedSeconds / 60);
+    const deltaMinutes = totalMinutesElapsed - alreadyLoggedMinutes;
+    if (selectedTaskId && deltaMinutes > 0) {
+      logTaskTime(selectedTaskId, deltaMinutes);
+      setAccumulatedLoggedSeconds(prev => prev + deltaMinutes * 60);
+    }
+  };
+
+  const handleNaturalFinish = () => {
+    if (hasLogged) return;
+    setHasLogged(true);
+    logElapsedTime();
     alert(isStudySession ? 'Session complete! Great job!' : 'Break is over!');
     stopTimer();
     setSessionStart(null);
   };
 
-  // Manual Stop
   const handleManualStop = () => {
-    if (sessionStart) {
-      const now = Date.now();
-      const secondsElapsed = Math.floor((now - sessionStart) / 1000);
-      const minutesElapsed = Math.floor(secondsElapsed / 60);
-      if (selectedTask && minutesElapsed > 0) {
-        logTaskTime(selectedTask.id, minutesElapsed);
-        setAccumulatedLoggedSeconds(prev => prev + minutesElapsed * 60);
-      }
-    }
+    logElapsedTime();
     stopTimer();
     setSessionStart(null);
   };
 
-  // Log Task
   const logTaskTime = (taskId, minutes) => {
-    fetch(`/api/tasks/log/${taskId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes })
-    })
-      .then(response => response.json())
-      .then(updatedTask => {
+    axios
+      .post(`http://localhost:8080/api/tasks/log/${taskId}`, { minutes })
+      .then(response => {
         setTasks(prevTasks =>
-          prevTasks.map(task => (task.id === taskId ? updatedTask : task))
+          prevTasks.map(task =>
+            task.id === taskId ? response.data : task
+          )
         );
       })
-      .catch(error => console.error('Error logging time:', error));
+      .catch(error => console.error("Error logging time:", error));
   };
 
-  // Timer Controls
+  // Start timer and set sessionStart here to avoid the timer effect being restarted unnecessarily.
   const startTimer = () => {
     if (!isRunning && currentTime > 0) {
+      setSessionStart(Date.now());
       setIsRunning(true);
     }
   };
@@ -136,6 +135,7 @@ const PomodoroPage = () => {
 
   const resetTimer = () => {
     stopTimer();
+    setHasLogged(false);
     if (sessionType === 'pomodoro') {
       setCurrentTime(DEFAULT_POMODORO);
       setIsStudySession(true);
@@ -146,13 +146,12 @@ const PomodoroPage = () => {
       setCurrentTime(DEFAULT_LONG_BREAK);
       setIsStudySession(false);
     } else if (sessionType === 'custom') {
-      setCurrentTime(0);
+      setCurrentTime(plannedDuration);
     }
     setAccumulatedLoggedSeconds(0);
     setSessionStart(null);
   };
 
-  // Custom Time Setup
   const handleSetCustomMinutes = () => {
     const minutes = parseInt(customMinutes, 10);
     if (!isNaN(minutes) && minutes > 0) {
@@ -162,7 +161,6 @@ const PomodoroPage = () => {
     }
   };
 
-  // Format Time
   const formatTime = (seconds) => {
     const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
     const secs = String(seconds % 60).padStart(2, '0');
@@ -171,24 +169,19 @@ const PomodoroPage = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' }}>
-      {/* Title */}
       <h1>Pomodoro Timer</h1>
-      {/* Timer Display */}
       <div style={{ fontSize: '4rem', fontWeight: 'bold', margin: '20px 0' }}>
         {formatTime(currentTime)}
       </div>
-      {/* Session Status */}
       <div style={{ marginBottom: '20px', fontWeight: 'bold' }}>
         {isStudySession ? 'Study Session' : 'Break'}
       </div>
-      {/* Session Buttons */}
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
         <button onClick={() => setSessionType('pomodoro')}>Pomodoro</button>
         <button onClick={() => setSessionType('short-break')}>Short Break</button>
         <button onClick={() => setSessionType('long-break')}>Long Break</button>
         <button onClick={() => setSessionType('custom')}>Custom</button>
       </div>
-      {/* Custom Time Input */}
       {sessionType === 'custom' && (
         <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <input
@@ -201,46 +194,19 @@ const PomodoroPage = () => {
           <button onClick={handleSetCustomMinutes}>Set Custom Time</button>
         </div>
       )}
-      {/* Task Input */}
-      <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px' }}>
-        <input
-          type="text"
-          placeholder="Task (optional)"
-          value={taskName}
-          onChange={(e) => setTaskName(e.target.value)}
-          style={{ padding: '8px', width: '100%' }}
-        />
-      </div>
-      {/* Task List */}
-      {tasks.length > 0 && (
-        <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px', textAlign: 'left' }}>
-          <h3>Tasks</h3>
+      <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px', textAlign: 'left' }}>
+        <h3>Tasks</h3>
+        {tasks.length > 0 ? (
           <ul style={{ padding: 0, listStyle: 'none' }}>
             {tasks.map(task => (
               <li key={task.id} style={{ marginBottom: '5px' }}>
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    padding: '5px',
-                    backgroundColor: selectedTask && selectedTask.id === task.id ? '#ddd' : 'transparent'
-                  }}
-                  onClick={(e) => {
-                    if (selectedTask && selectedTask.id === task.id) {
-                      setSelectedTask(null);
-                      e.preventDefault();
-                    } else {
-                      setSelectedTask(task);
-                    }
-                  }}
-                >
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input
                     type="radio"
                     name="taskSelection"
                     style={{ marginRight: '8px' }}
-                    readOnly
-                    checked={selectedTask ? selectedTask.id === task.id : false}
+                    checked={String(selectedTaskId) === String(task.id)}
+                    onChange={() => setSelectedTaskId(task.id)}
                   />
                   <span>
                     {task.title} - Logged: {task.loggedTime}min / Target: {task.targetTime}min
@@ -249,9 +215,10 @@ const PomodoroPage = () => {
               </li>
             ))}
           </ul>
-        </div>
-      )}
-      {/* Controls */}
+        ) : (
+          <p>No tasks available</p>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: '10px' }}>
         <button onClick={startTimer}>Start</button>
         <button onClick={handleManualStop}>Stop</button>

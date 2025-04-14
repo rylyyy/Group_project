@@ -1,0 +1,32 @@
+.navbar {
+    background-color: var(--blue);
+    padding: 1rem;
+  }
+  
+  .navbar-list {
+    list-style: none;
+    display: flex;
+    gap: 1rem;
+    margin: 0;
+    padding: 0;
+    justify-content: center;
+  }
+  
+  .navbar-item {
+    /* No extra styling needed here if not desired */
+  }
+  
+  .nav-link {
+    display: block;
+    padding: 0.5rem 1rem;
+    color: var(--light-blue);
+    text-decoration: none;
+    border-radius: 4px;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  .nav-link:hover {
+    background-color: var(--yellow);
+    color: var(--dark-blue);
+  }
+  
