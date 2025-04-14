@@ -81,6 +81,7 @@ public class TaskController {
                 task.setPriority(taskDetails.getPriority());
                 task.setStatus(taskDetails.getStatus());
                 task.setTargetTime(taskDetails.getTargetTime());
+                task.setLoggedTime(taskDetails.getLoggedTime());
                 // Optionally update loggedTime here if you expect it to be updated manually as well.
                 Task updatedTask = taskRepository.save(task);
                 return new ResponseEntity<>(updatedTask, HttpStatus.OK);
@@ -105,20 +106,5 @@ public class TaskController {
         }
     }
 
-    // Log Time for Task
-    @PostMapping("/log/{id}")
-    public ResponseEntity<Task> logTime(@PathVariable("id") Long id, @RequestBody Map<String, Integer> request) {
-        try {
-            int minutes = request.get("minutes");
-            return taskRepository.findById(id).map(task -> {
-                // Assume task.getLoggedTime() returns an Integer; add the new minutes.
-                int currentLogged = task.getLoggedTime();
-                task.setLoggedTime(currentLogged + minutes);
-                Task updatedTask = taskRepository.save(task);
-                return new ResponseEntity<>(updatedTask, HttpStatus.OK);
-            }).orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
-        } catch (Exception e) {
-            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
-        }
-    }
+    
 }
