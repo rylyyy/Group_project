@@ -18,10 +18,10 @@ public class DemoApplication {
     @Bean
     public ApplicationRunner init(TaskRepository repository) {
         return args -> {
-            // repository.save(new Task("Write report", "High", "Not Started", 60));
-            // repository.save(new Task("Study mathematics", "Medium", "Not Started", 45));
-            // repository.save(new Task("Read chapter 5", "Low", "Not Started", 30));
-            // repository.findAll().forEach(System.out::println);
+            repository.save(new Task("Write report", "High", "Not Started", 60));
+            repository.save(new Task("Study mathematics", "Medium", "Not Started", 45));
+            repository.save(new Task("Read chapter 5", "Low", "Not Started", 30));
+            repository.findAll().forEach(System.out::println);
         };
     }
 }
