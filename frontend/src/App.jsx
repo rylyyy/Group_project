@@ -124,7 +124,7 @@ function DeadlineTracker() {
         </Typography>
         <SettingsModal settings={settings} setSettings={setSettings} />
       </Stack>
-
+ 
       <Sheet
         sx={{
           width: "100vw",
