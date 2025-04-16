@@ -105,6 +105,15 @@ public class TaskController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+    @PostMapping("/log/{id}")
+    public ResponseEntity<Task> logTime(@PathVariable Long id, @RequestBody Map<String,Integer> body) {
+        return taskRepository.findById(id).map(task -> {
+            int minutes = body.getOrDefault("minutes", 0);
+            task.addLoggedTime(minutes);
+            Task updated = taskRepository.save(task);
+            return new ResponseEntity<>(updated, HttpStatus.OK);
+        }).orElse(new ResponseEntity<>(HttpStatus.NOT_FOUND));
+    }
 
     
 }

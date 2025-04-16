@@ -1,13 +1,14 @@
+// src/pages/PomodoroPage.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-
 const PomodoroPage = () => {
+  // Constants
   const DEFAULT_POMODORO = 25 * 60;
   const DEFAULT_SHORT_BREAK = 5 * 60;
   const DEFAULT_LONG_BREAK = 15 * 60;
 
-
+  // State
   const [sessionType, setSessionType] = useState('pomodoro');
   const [currentTime, setCurrentTime] = useState(DEFAULT_POMODORO);
   const [isRunning, setIsRunning] = useState(false);
@@ -16,26 +17,24 @@ const PomodoroPage = () => {
   const [tasks, setTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [plannedDuration, setPlannedDuration] = useState(DEFAULT_POMODORO);
-  const [accumulatedLoggedSeconds, setAccumulatedLoggedSeconds] = useState(0);
   const [sessionStart, setSessionStart] = useState(null);
+
+  // Ref to prevent double‐logging
   const hasLoggedRef = useRef(false);
- 
   const timerRef = useRef(null);
 
-
-  // Fetch tasks once when the component loads.
+  // Fetch tasks once when the component mounts
   useEffect(() => {
     axios
       .get('http://localhost:8080/api/tasks')
-      .then(response => setTasks(response.data))
-      .catch(error => console.error("Error fetching tasks:", error));
+      .then(res => setTasks(res.data))
+      .catch(err => console.error('Error fetching tasks:', err));
   }, []);
 
-
-  // Reset timer settings when sessionType changes.
+  // Reset timer whenever sessionType changes
   useEffect(() => {
-    stopTimer();
-    hasLoggedRef.current = false;  // Reset logging flag.
+    pauseTimer();
+    hasLoggedRef.current = false;
     if (sessionType === 'pomodoro') {
       setPlannedDuration(DEFAULT_POMODORO);
       setCurrentTime(DEFAULT_POMODORO);
@@ -49,151 +48,94 @@ const PomodoroPage = () => {
       setCurrentTime(DEFAULT_LONG_BREAK);
       setIsStudySession(false);
     } else if (sessionType === 'custom') {
-      const customSec = customMinutes ? parseInt(customMinutes, 10) * 60 : 0;
-      setPlannedDuration(customSec);
-      setCurrentTime(customSec);
+      const secs = (parseInt(customMinutes, 10) || 0) * 60;
+      setPlannedDuration(secs);
+      setCurrentTime(secs);
       setIsStudySession(true);
     }
-    setAccumulatedLoggedSeconds(0);
     setSessionStart(null);
   }, [sessionType]);
 
-
-  // Timer effect: Count down every second and call finish immediately when time <= 1.
+  // Countdown effect
   useEffect(() => {
     if (isRunning) {
+      if (!sessionStart) setSessionStart(Date.now());
       timerRef.current = setInterval(() => {
-        setCurrentTime(prevTime => {
-          if (prevTime <= 1) {
+        setCurrentTime(t => {
+          if (t <= 1) {
             clearInterval(timerRef.current);
             handleNaturalFinish();
             return 0;
           }
-          return prevTime - 1;
+          return t - 1;
         });
       }, 1000);
     }
     return () => clearInterval(timerRef.current);
   }, [isRunning]);
 
-
-  const logElapsedTime = () => {
-    if (!sessionStart) return;
-
-
-    // For custom sessions, log exactly the user-entered value.
-    if (sessionType === 'custom') {
-      if (accumulatedLoggedSeconds === 0 && selectedTaskId) {
-        const minutes = parseInt(customMinutes, 10);
-        logTaskTime(selectedTaskId, minutes);
-        setAccumulatedLoggedSeconds(minutes * 60);
-      }
-      return;
-    }
-
-
-    // For non-custom sessions, compute elapsed minutes.
-    const secondsElapsed = Math.floor((Date.now() - sessionStart) / 1000);
-    let totalMinutesElapsed = Math.floor(secondsElapsed / 60);
-    // If session finished quickly (but with nonzero seconds) ensure at least one minute is logged.
-    if (currentTime === 0 && secondsElapsed > 0 && totalMinutesElapsed === 0) {
-      totalMinutesElapsed = 1;
-    }
-    const alreadyLoggedMinutes = Math.floor(accumulatedLoggedSeconds / 60);
-    const deltaMinutes = totalMinutesElapsed - alreadyLoggedMinutes;
-    if (selectedTaskId && deltaMinutes > 0) {
-      logTaskTime(selectedTaskId, deltaMinutes);
-      setAccumulatedLoggedSeconds(prev => prev + deltaMinutes * 60);
-    }
-  };
-
-
+  // Called when timer hits zero
   const handleNaturalFinish = () => {
-    if (!hasLoggedRef.current) {
+    if (selectedTaskId && !hasLoggedRef.current) {
+      const minutes =
+        sessionType === 'custom'
+          ? parseInt(customMinutes, 10) || 0
+          : Math.ceil(plannedDuration / 60);
       hasLoggedRef.current = true;
-      logElapsedTime();
+      axios
+        .post(`http://localhost:8080/api/tasks/log/${selectedTaskId}`, { minutes })
+        .then(res =>
+          setTasks(ts => ts.map(t => (t.id === selectedTaskId ? res.data : t)))
+        )
+        .catch(err => console.error('Error logging time:', err));
     }
     alert(isStudySession ? 'Session complete! Great job!' : 'Break is over!');
-    stopTimer();
+    pauseTimer();
     setSessionStart(null);
   };
 
-
-  // Stop the timer manually and log elapsed time if not done already.
-  const handleManualStop = () => {
-    stopTimer();
-    setSessionStart(null);
-    if (!hasLoggedRef.current) {
-      hasLoggedRef.current = true;
-      logElapsedTime();
-    }
+  // Pause (formerly Stop) — does NOT log time
+  const handlePause = () => {
+    pauseTimer();
+    // leave sessionStart unchanged so resume will continue
   };
 
-
-  const logTaskTime = (taskId, minutes) => {
-    axios
-      .post(`http://localhost:8080/api/tasks/log/${taskId}`, { minutes })
-      .then(response => {
-        setTasks(prevTasks =>
-          prevTasks.map(task =>
-            task.id === taskId ? response.data : task
-          )
-        );
-      })
-      .catch(error => console.error("Error logging time:", error));
-  };
-
-
-  const startTimer = () => {
-    if (!isRunning && currentTime > 0) {
-      setSessionStart(Date.now());
-      setIsRunning(true);
-    }
-  };
-
-
-  const stopTimer = () => {
+  const pauseTimer = () => {
     setIsRunning(false);
     clearInterval(timerRef.current);
   };
 
-
-  const resetTimer = () => {
-    stopTimer();
-    hasLoggedRef.current = false;
-    if (sessionType === 'pomodoro') {
-      setCurrentTime(DEFAULT_POMODORO);
-      setIsStudySession(true);
-    } else if (sessionType === 'short-break') {
-      setCurrentTime(DEFAULT_SHORT_BREAK);
-      setIsStudySession(false);
-    } else if (sessionType === 'long-break') {
-      setCurrentTime(DEFAULT_LONG_BREAK);
-      setIsStudySession(false);
-    } else if (sessionType === 'custom') {
-      setCurrentTime(plannedDuration);
+  // Start / resume
+  const startTimer = () => {
+    if (!isRunning && currentTime > 0) {
+      setIsRunning(true);
     }
-    setAccumulatedLoggedSeconds(0);
+  };
+
+  // Reset entirely
+  const resetTimer = () => {
+    pauseTimer();
+    hasLoggedRef.current = false;
+    setCurrentTime(plannedDuration);
     setSessionStart(null);
   };
 
-
+  // Apply custom minutes
   const handleSetCustomMinutes = () => {
-    const minutes = parseInt(customMinutes, 10);
-    if (!isNaN(minutes) && minutes > 0) {
-      const customSeconds = minutes * 60;
-      setPlannedDuration(customSeconds);
-      setCurrentTime(customSeconds);
+    const mins = parseInt(customMinutes, 10);
+    if (!isNaN(mins) && mins > 0) {
+      const secs = mins * 60;
+      setPlannedDuration(secs);
+      setCurrentTime(secs);
     }
   };
 
-
-  const formatTime = (seconds) => {
-    const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
-    const secs = String(seconds % 60).padStart(2, '0');
-    return `${minutes}:${secs}`;
+  // Format seconds into MM:SS
+  const formatTime = secs => {
+    const m = String(Math.floor(secs / 60)).padStart(2, '0');
+    const s = String(secs % 60).padStart(2, '0');
+    return `${m}:${s}`;
   };
-
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px' }}>
@@ -204,57 +146,56 @@ const PomodoroPage = () => {
       <div style={{ marginBottom: '20px', fontWeight: 'bold' }}>
         {isStudySession ? 'Study Session' : 'Break'}
       </div>
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button onClick={() => setSessionType('pomodoro')}>Pomodoro</button>
         <button onClick={() => setSessionType('short-break')}>Short Break</button>
         <button onClick={() => setSessionType('long-break')}>Long Break</button>
         <button onClick={() => setSessionType('custom')}>Custom</button>
       </div>
       {sessionType === 'custom' && (
-        <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ marginBottom: '20px', textAlign: 'center' }}>
           <input
             type="number"
-            placeholder="Enter minutes"
+            placeholder="Minutes"
             value={customMinutes}
-            onChange={(e) => setCustomMinutes(e.target.value)}
-            style={{ padding: '8px', width: '120px', marginBottom: '10px' }}
+            onChange={e => setCustomMinutes(e.target.value)}
+            style={{ padding: '8px', width: '100px', marginRight: '8px' }}
           />
-          <button onClick={handleSetCustomMinutes}>Set Custom Time</button>
+          <button onClick={handleSetCustomMinutes}>Set</button>
         </div>
       )}
-      <div style={{ marginBottom: '20px', width: '100%', maxWidth: '300px', textAlign: 'left' }}>
+      <div style={{ width: '100%', maxWidth: '300px', marginBottom: '20px' }}>
         <h3>Tasks</h3>
-        {tasks.length > 0 ? (
-          <ul style={{ padding: 0, listStyle: 'none' }}>
+        {tasks.length === 0 ? (
+          <p>No tasks available</p>
+        ) : (
+          <ul style={{ listStyle: 'none', padding: 0 }}>
             {tasks.map(task => (
-              <li key={task.id} style={{ marginBottom: '5px' }}>
+              <li key={task.id} style={{ marginBottom: '8px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                   <input
                     type="radio"
                     name="taskSelection"
-                    style={{ marginRight: '8px' }}
-                    checked={String(selectedTaskId) === String(task.id)}
+                    checked={selectedTaskId === task.id}
                     onChange={() => setSelectedTaskId(task.id)}
+                    style={{ marginRight: '8px' }}
                   />
                   <span>
-                    {task.title} - Logged: {task.loggedTime}min / Target: {task.targetTime}min
+                    {task.title} — Logged: {task.loggedTime} min / Target: {task.targetTime} min
                   </span>
                 </label>
               </li>
             ))}
           </ul>
-        ) : (
-          <p>No tasks available</p>
         )}
       </div>
       <div style={{ display: 'flex', gap: '10px' }}>
         <button onClick={startTimer}>Start</button>
-        <button onClick={handleManualStop}>Stop</button>
+        <button onClick={handlePause}>Pause</button>
         <button onClick={resetTimer}>Reset</button>
       </div>
     </div>
   );
 };
-
 
 export default PomodoroPage;

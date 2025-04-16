@@ -114,8 +114,11 @@ function DeadlineTracker() {
         }}
       >
         <Typography
-          startDecorator={<img src={logo} alt="logo" style={{ width: "30px", height: "30px" }} />}
+          startDecorator={
+            <img src={logo} alt="logo" style={{ width: 30, height: 30 }} />
+          }
           level="title-lg"
+          sx={{ color: "#fff" }}
         >
           Deadline Tracker
         </Typography>
@@ -234,7 +237,7 @@ function ManageCoursesModal({ ...props }) {
   return (
     <>
       <Badge invisible={hasCourses} badgeContent={"Add Course!"} color="danger">
-        <Button variant="outlined" color="purple" startDecorator={<FaBook />} onClick={() => setOpen(true)}>
+        <Button variant="solid" color="primary" startDecorator={<FaBook />} onClick={() => setOpen(true)}>
           Manage Courses
         </Button>
       </Badge>
