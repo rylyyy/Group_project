@@ -122,7 +122,7 @@ function DeadlineTracker() {
         >
           Deadline Tracker
         </Typography>
-        <SettingsModal settings={settings} setSettings={setSettings} />
+        {/* <SettingsModal settings={settings} setSettings={setSettings} /> */}
       </Stack>
  
       <Sheet
